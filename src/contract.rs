@@ -16,7 +16,9 @@ pub fn init<S: Storage, A: Api, Q: Querier>(
     let state = State {
         accepted_token: msg.accepted_token.clone(),
         admin: env.message.sender.clone(),
+        funding_collection_interval_in_seconds: 604800,
         offered_token: msg.offered_token.clone(),
+        percent_of_funding_collectable_per_interval: 10,
         percent_of_funding_collected: 0,
         sale_end_time: msg.sale_end_time,
         viewing_key: msg.viewing_key.clone(),
@@ -73,7 +75,7 @@ pub fn handle<S: Storage, A: Api, Q: Querier>(
         HandleMsg::ReceiveAcceptedTokenCallback { from, amount, .. } => {
             receive_accepted_token_callback(deps, env, from, amount)
         }
-        HandleMsg::WithdrawFunding { amount } => withdraw_funding(deps, env, amount),
+        HandleMsg::CollectFunding {} => collect_funding(deps, env),
     }
 }
 
@@ -192,10 +194,9 @@ fn offered_token_available<S: Storage, A: Api, Q: Querier>(
     })
 }
 
-fn withdraw_funding<S: Storage, A: Api, Q: Querier>(
+fn collect_funding<S: Storage, A: Api, Q: Querier>(
     deps: &mut Extern<S, A, Q>,
     env: Env,
-    amount: Uint128,
 ) -> StdResult<HandleResponse> {
     let mut state = config_read(&deps.storage).load()?;
 
@@ -204,21 +205,72 @@ fn withdraw_funding<S: Storage, A: Api, Q: Querier>(
         return Err(StdError::Unauthorized { backtrace: None });
     }
 
-    // Enforce that sale has finished
+    // Enforce that sale has ended
     if env.block.time < state.sale_end_time {
         return Err(StdError::generic_err(
             "Funding can't be withdrawn until sale has ended.",
         ));
     }
 
+    // Ensure funding hasn't been already collected
+    let time_since_sale_end_time: u64 = env.block.time - state.sale_end_time;
+    let total_percentage_collectable: u64 = state.percent_of_funding_collectable_per_interval
+        as u64
+        * (time_since_sale_end_time / state.funding_collection_interval_in_seconds as u64 + 1);
+    if total_percentage_collectable - state.percent_of_funding_collected as u64 == 0 {
+        return Err(StdError::generic_err(
+            "Funding can't be collected until next interval.",
+        ));
+    }
+
+    // Enforce that their are tokens available to collect
+    let accepted_token_available_amount: Uint128 =
+        accepted_token_available(deps, env).unwrap().amount;
+    if accepted_token_available_amount == Uint128(0) {
+        return Err(StdError::generic_err("No tokens to be collected"));
+    }
+
+    // Calculate amount withdrawable
+    // Calculate amount to collect
+    let amount_to_collect: Uint128 = if total_percentage_collectable >= 100 {
+        accepted_token_available_amount
+    } else {
+        let net_percentage_collectable =
+            total_percentage_collectable - state.percent_of_funding_collected as u64;
+        accepted_token_available_amount * net_percentage_collectable / 100
+    };
+
+    // Enforce that funds can be withdrawn in time interval
+    let time_as_float = env.block.time as f64;
+    let sale_end_time_as_float = state.sale_end_time as f64;
+    let funding_collection_interval_in_seconds_as_float =
+        state.funding_collection_interval_in_seconds as f64;
+    let percent_of_funding_collectable_per_interval_as_float =
+        state.percent_of_funding_collectable_per_interval as f64;
+
+    if (time_as_float - sale_end_time_as_float) / funding_collection_interval_in_seconds_as_float
+        * percent_of_funding_collectable_per_interval_as_float
+        < 100 as f64
+    {
+        return Err(StdError::generic_err(
+            "Funding can't be withdrawn until sale has ended.",
+        ));
+    }
+
     // Update percent of funding collected
-    state.percent_of_funding_collected = 100;
-    config(&mut deps.storage).save(&state)?;
+    if state.percent_of_funding_collected != 100 {
+        state.percent_of_funding_collected = if total_percentage_collectable < 100 {
+            total_percentage_collectable as u8
+        } else {
+            100
+        };
+        config(&mut deps.storage).save(&state)?;
+    }
 
     // Transfer accepted token to admin
     let messages = vec![snip20::transfer_msg(
         state.admin,
-        amount,
+        amount_to_collect,
         None,
         RESPONSE_BLOCK_SIZE,
         state.accepted_token.contract_hash,
@@ -350,11 +402,11 @@ mod tests {
     }
 
     #[test]
-    fn test_withdraw_funding() {
+    fn test_collect_funding() {
         let (_init_result, mut deps) = init_helper();
         let amount: Uint128 = Uint128(123);
         //=== When user is not admin
-        let msg = HandleMsg::WithdrawFunding { amount: amount };
+        let msg = HandleMsg::CollectFunding {};
         let handle_response = handle(&mut deps, mock_env("notanadmin", &[]), msg.clone());
         assert_eq!(
             handle_response.unwrap_err(),

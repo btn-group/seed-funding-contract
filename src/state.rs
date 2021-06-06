@@ -23,12 +23,16 @@ pub struct User {
     pub total_investment: Uint128,
 }
 
+// sale_end_time is seconds since epoch
+// funding_collection_interval_in_seconds is used for seconds after sale_end_time
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct State {
     pub accepted_token: SecretContract,
     pub admin: HumanAddr,
     pub offered_token: SecretContract,
     pub percent_of_funding_collected: u8,
+    pub percent_of_funding_collectable_per_interval: u8,
+    pub funding_collection_interval_in_seconds: u32,
     pub sale_end_time: u64,
     pub viewing_key: String,
 }

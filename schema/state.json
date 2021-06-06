@@ -5,7 +5,9 @@
   "required": [
     "accepted_token",
     "admin",
+    "funding_withdrawal_interval_in_seconds",
     "offered_token",
+    "percent_of_funding_collectable_per_interval",
     "percent_of_funding_collected",
     "sale_end_time",
     "viewing_key"
@@ -17,8 +19,18 @@
     "admin": {
       "$ref": "#/definitions/HumanAddr"
     },
+    "funding_withdrawal_interval_in_seconds": {
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0.0
+    },
     "offered_token": {
       "$ref": "#/definitions/SecretContract"
+    },
+    "percent_of_funding_collectable_per_interval": {
+      "type": "integer",
+      "format": "uint8",
+      "minimum": 0.0
     },
     "percent_of_funding_collected": {
       "type": "integer",
