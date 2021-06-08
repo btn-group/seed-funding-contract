@@ -1,4 +1,5 @@
-use crate::msg::{BalanceResponse, ConfigResponse, HandleMsg, InitMsg, QueryMsg};
+use crate::msg::ResponseStatus::Success;
+use crate::msg::{BalanceResponse, ConfigResponse, HandleAnswer, HandleMsg, InitMsg, QueryMsg};
 use crate::state::{config, config_read, State};
 use cosmwasm_std::{
     to_binary, Api, Binary, Env, Extern, HandleResponse, HumanAddr, InitResponse, Querier,
@@ -131,7 +132,7 @@ fn receive<S: Storage, A: Api, Q: Querier>(
     Ok(HandleResponse {
         messages,
         log: vec![],
-        data: None,
+        data: Some(to_binary(&HandleAnswer::Receive { status: Success })?),
     })
 }
 
