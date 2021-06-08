@@ -6,6 +6,7 @@ use cosmwasm_std::{
     StdError, StdResult, Storage, Uint128,
 };
 use secret_toolkit::snip20;
+use secret_toolkit::utils::{pad_handle_result, pad_query_result};
 
 pub const RESPONSE_BLOCK_SIZE: usize = 256;
 
@@ -56,11 +57,13 @@ pub fn handle<S: Storage, A: Api, Q: Querier>(
     env: Env,
     msg: HandleMsg,
 ) -> StdResult<HandleResponse> {
-    match msg {
+    let response = match msg {
         HandleMsg::Receive {
             from, amount, msg, ..
         } => receive(deps, env, from, amount, msg),
-    }
+    };
+
+    pad_handle_result(response, RESPONSE_BLOCK_SIZE)
 }
 
 pub fn query<S: Storage, A: Api, Q: Querier>(
@@ -68,10 +71,12 @@ pub fn query<S: Storage, A: Api, Q: Querier>(
     env: Env,
     msg: QueryMsg,
 ) -> StdResult<Binary> {
-    match msg {
+    let response = match msg {
         QueryMsg::Config {} => to_binary(&public_config(deps)?),
         QueryMsg::OfferedTokenAvailable {} => to_binary(&offered_token_available(deps, env)?),
-    }
+    };
+
+    pad_query_result(response, RESPONSE_BLOCK_SIZE)
 }
 
 fn public_config<S: Storage, A: Api, Q: Querier>(
